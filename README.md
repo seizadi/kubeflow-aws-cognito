@@ -105,6 +105,22 @@ brew install istioctl
 ```
 
 ## Debug
+### Could not use kfctl apply to install
+I have following error:
+```bash
+WARN[0111] Encountered error applying application istio-install:  (kubeflow.error): Code 500 with message: Apply.Run  Error [error when applying patch:
+....
+ssgateway", "chart":"gateways", "heritage":"Tiller", "istio":"ingressgateway", "release":"istio"}, MatchExpressions:[]v1.LabelSelectorRequirement(nil)}: field is immutable, error when creating "/tmp/kout925260150": admission webhook "validation.istio.io" denied the request: unrecognized type kubernetes, error when creating "/tmp/kout925260150": admission webhook "validation.istio.io" denied the request: unrecognized type logentry, error when creating "/tmp/kout925260150": admission webhook "validation.istio.io" denied the request: unrecognized type metric]  filename="kustomize/kustomize.go:202"
+WARN[0111] Will retry in 12 seconds.                     filename="kustomize/kustomize.go:203"
+```
+Start by upgrading from v1.0.2 from v1.0-branch
+```bash
+wget https://raw.githubusercontent.com/kubeflow/manifests/v1.0-branch/kfdef/kfctl_aws_cognito.v1.0.2.yaml
+```
+to v1.0.2 from v1.1.0 branch:
+```bash
+wget https://raw.githubusercontent.com/kubeflow/manifests/v1.1.0/kfdef/kfctl_aws_cognito.v1.0.2.yaml
+```
 
 ### Could not use kubectl
 ```bash

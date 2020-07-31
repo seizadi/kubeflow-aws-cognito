@@ -30,7 +30,7 @@ repo:
 		--git-email $(shell cat .id)@users.noreply.github.com \
 		--git-url git@github.com:$(shell cat .id)/$(GIT_REPO)
 
-kubeflow-build: deploy/kfctl_aws_cognito.v1.0.2.yaml.in
+kubeflow: deploy/kfctl_aws_cognito.v1.0.2.yaml.in
 	./scripts/kubeflow.sh $(AWS_REGION) \
 		$(AWS_COGNITO_USER_POOL_NAME) \
 		$(AWS_COGNITO_USER_APP_NAME) \
