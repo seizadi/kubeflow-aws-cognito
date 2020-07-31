@@ -1,10 +1,11 @@
+# Modeled after this template https://www.kubeflow.org/docs/aws/aws-e2e/#deploy-the-kubernetes-cluster
 apiVersion: eksctl.io/v1alpha5
 kind: ClusterConfig
 metadata:
-  name: {{ .Name }}-appmesh
+  name: {{ .Name }}-eks-kubeflow
   region: {{ .Region }}
 nodeGroups:
-  - name: {{ .Name }}-eks
+  - name: {{ .Name }}-eks-kubeflow-ng
     instanceType: m5.large
     desiredCapacity: 2
     volumeSize: 120
@@ -14,7 +15,3 @@ nodeGroups:
       'OrginatingUser': '{{ .Name }}'
       'Env': 'Dev'
       'Protected': 'TRUE'
-    iam:
-      withAddonPolicies:
-        appMesh: true
-        xRay: true

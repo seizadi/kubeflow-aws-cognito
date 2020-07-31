@@ -1,3 +1,4 @@
 .idea
 .id
 deploy/cluster.yaml
+deploy/kfctl_aws_cognito.v1.0.2.yaml
