@@ -30,12 +30,18 @@ repo:
 		--git-email $(shell cat .id)@users.noreply.github.com \
 		--git-url git@github.com:$(shell cat .id)/$(GIT_REPO)
 
-kubeflow: deploy/kfctl_aws_cognito.v1.0.2.yaml.in
+kubeflow-build: deploy/kfctl_aws_cognito.v1.0.2.yaml.in
 	./scripts/kubeflow.sh $(AWS_REGION) \
 		$(AWS_COGNITO_USER_POOL_NAME) \
 		$(AWS_COGNITO_USER_APP_NAME) \
 		$(shell cat .id)-eks-kubeflow
-	@echo "Kubeflow deployed on cluster"
+
+	# Creates configuration files defining the various resources
+	# in your deployment. You only need to run kfctl build if you want to edit the
+	# resources before running kfctl apply.
+	kfctl build -f deploy/kfctl_aws_cognito.v1.0.2.yaml -V
+	@echo "Kubeflow configuration built"
+
 
 
 status:
