@@ -37,5 +37,6 @@ sed "s/{{ .Region }}/$1/g;
 	s~{{ .CertArn }}~$COGNITO_CERT_ARN~g;
 	s~{{ .CognitoUserPoolArn }}~$COGNITO_USER_POOL_ARN~g;
 	s/{{ .CognitoUserPoolDomain }}/$COGNITO_USER_POOL_DOMAIN/g;
+	s/{{ .CognitoAppClientId }}/$COGNITO_CLIENT_ID/g
 	s/{{ .KubeflowClusterRole }}/$KUBEFLOW_CLUSTER_ROLE/g
 	" deploy/kfctl_aws_cognito.v1.0.2.yaml.in > deploy/kfctl_aws_cognito.v1.0.2.yaml

@@ -35,6 +35,7 @@ kubeflow: deploy/kfctl_aws_cognito.v1.0.2.yaml.in
 		$(AWS_COGNITO_USER_POOL_NAME) \
 		$(AWS_COGNITO_USER_APP_NAME) \
 		$(shell cat .id)-eks-kubeflow
+	kfctl apply -f deploy/kfctl_aws_cognito.v1.0.2.yaml -V
 	@echo "Kubeflow deployed on cluster"
 
 
