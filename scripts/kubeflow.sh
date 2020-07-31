@@ -26,8 +26,8 @@ COGNITO_CDN=`aws cognito-idp --region $1 describe-user-pool-domain --domain  $CO
 COGNITO_CERT_ARN=`aws cognito-idp --region $1 describe-user-pool-domain --domain  $COGNITO_USER_POOL_DOMAIN  |
 					jq -r ".DomainDescription.CustomDomainConfig.CertificateArn"`
 
-KUBEFLOW_CLUSTER_ROLE=`aws iam list-roles | jq -r ".Roles[] | \
-		select(.RoleName | startswith(\"$4\") \
+KUBEFLOW_CLUSTER_ROLE=`aws iam --region $1 list-roles | jq -r ".Roles[] | \
+		select(.RoleName | startswith(\"eksctl-$4\") \
 		and contains(\"NodeInstanceRole\")) .RoleName"`
 
 touch deploy/kfctl_aws_cognito.v1.0.2.yaml
