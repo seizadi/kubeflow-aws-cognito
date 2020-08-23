@@ -4,10 +4,11 @@ kind: ClusterConfig
 metadata:
   name: {{ .Name }}-eks-kubeflow
   region: {{ .Region }}
+  version: "1.15"
 nodeGroups:
   - name: {{ .Name }}-eks-kubeflow-ng
     instanceType: m5.large
-    desiredCapacity: 2
+    desiredCapacity: 6
     volumeSize: 120
     tags:
       'Product': 'Athena'
@@ -15,3 +16,4 @@ nodeGroups:
       'OrginatingUser': '{{ .Name }}'
       'Env': 'Dev'
       'Protected': 'TRUE'
+availabilityZones: [ {{ .RegionAZs }} ]
