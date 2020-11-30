@@ -443,7 +443,299 @@ Logged [this issue](https://github.com/kubeflow/kubeflow/issues/5196) to track t
 resolution was to set the cluster name in ALB manifest in the file
 [param.env](https://github.com/kubeflow/manifests/blob/master/aws/aws-alb-ingress-controller/base/params.env).
 
+
+### Debug Model 
+In the [guide](https://www.kubeflow.org/docs/aws/aws-e2e/#deploy-models) 
+they show how to apply models:
+```bash
+kubectl apply -f https://raw.githubusercontent.com/kubeflow/kfserving/master/docs/samples/tensorflow/tensorflow.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubeflow/kfserving/master/docs/samples/pytorch/pytorch.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubeflow/kfserving/master/docs/samples/sklearn/sklearn.yaml
+```
+There is a cryptic example of how to do a post call with reference
+to Web cookie,
+```bash
+POST https://sklearn-iris-predictor-default.default.platform.domain.com/v1/models/sklearn-iris:predict HTTP/1.1
+Host: sklearn-iris-predictor-default.default.platform.domain.com
+Content-Type: application/json
+Cookie: AWSELBAuthSessionCookie-0=TBLc8+Mz0hSZp...
+
+{
+  "instances": [
+    [6.8,  2.8,  4.8,  1.4],
+    [6.0,  3.4,  4.5,  1.6]
+  ]
+}
+```
+
+First make sure the model serving label is enabled for your namespace, this is typically the case
+but good to check:
+```bash
+kubectl describe namespace seizadi
+
+Name:         seizadi
+Labels:       istio-injection=enabled
+              katib-metricscollector-injection=enabled
+              serving.kubeflow.org/inferenceservice=enabled
+....
+```
+You want 'serving.kubeflow.org/inferenceservice=enabled' in the namespace. If it is not
+enabled you can enable it:
+```bash
+kubectl label namespace kubeflow serving.kubeflow.org/inferenceservice=enabled
+```
+
+You should apply the model to your namespace:
+```bash
+kubectl apply -n kubeflow -f https://raw.githubusercontent.com/kubeflow/kfserving/master/docs/samples/sklearn/sklearn.yaml
+```
+You should have a model now being served in your namespace:
+```bash
+ k get InferenceService
+NAME           URL                                                                       READY   DEFAULT TRAFFIC   CANARY TRAFFIC   AGE
+sklearn-iris   http://sklearn-iris.seizadi.platform.sexample.com/v1/models/sklearn-iris   True    100                                23s
+```
+
+If you have problems at this level this is a 
+[guide on debugging KF-Serving Model](https://github.com/kubeflow/kfserving/blob/master/docs/KFSERVING_DEBUG_GUIDE.md) 
+
+Note that the URL for accessing this model has the namespace sandwiched in the path
+so your path will vary depending on what namespace the model is served. Also when you
+are using your login credentials you will need the cookies that give you access to your
+namwspace.
+
+You need to use this unique URL in your request header to specify the HOST:
+```bash
+kubectl get -n seizadi inferenceservice sklearn-iris -o jsonpath='{.status.url}' | cut -d "/" -f 3
+sklearn-iris.seizadi.platform.sexample.com
+```
+
+```bash
+ kubectl get -n seizadi inferenceservices
+NAME           URL                                                                       READY   DEFAULT TRAFFIC   CANARY TRAFFIC   AGE
+sklearn-iris   http://sklearn-iris.seizadi.platform.example.com/v1/models/sklearn-iris   True    100                                31h
+```
+
+The cookies are long and difficult to work with curl so I decided to use python
+to make the requests for testing...
+
+```python
+import requests
+
+# api-endpoint 
+url = 'https://kubeflow.platform.example.com/pipeline/apis/v1beta1/pipelines?page_token=&page_size=10&sort_by=created_at%20desc&filter='
+
+cookies = {'AWSELBAuthSessionCookie-0': 'xxxxxx'
+           'AWSELBAuthSessionCookie-1': 'xxxxxx'
+          }
+
+r = requests.get(url=url, cookies=cookies)
+result = r.json()
+```
+
+This should work since it is what the Kubeflow UI uses for pipeline API. This tests to
+make sure you have the cookies properly captured from browser session.
+
+Now we test the kfserving:
+```python
+url = 'https://kubeflow.platform.example.com/v1/models/sklearn-iris:predict'
+
+headers={'Host': 'sklearn-iris.seizadi.platform.sexample.com'}
+# data to be sent to api 
+data = { 'instances': [ [6.8,  2.8,  4.8,  1.4], [6.0,  3.4,  4.5,  1.6] ] } 
+
+r = requests.post(url=url, cookies=cookies, data=data, headers=headers)
+
+print(r)
+```
+
+This request returns 404 error. The log from istio-system namespace istio-gateway
+show that the wrong endpoint used, when I hit the kubeflow endpoint and returns 404
+
+```bash
+[2020-10-22T02:11:42.455Z] "POST /v1/models/sklearn-iris:predict HTTP/1.1" 404 - "-" 111 170 4 1 "73.241.144.80,192.168.68.197" "python-requests/2.24.0" "44bfcc13-45d1-9d97-b207-b75504c24fe3" "sklearn-iris.seizadi.platform.example.com" "192.168.11.138:8082" outbound|80||centraldashboard.kubeflow.svc.cluster.local - 192.168.80.224:80 192.168.68.197:6436 -
+```
+
+Sicne we have routing problem, this is a good guide to show the
+[flow of requests:](https://github.com/kubeflow/kfserving/blob/master/docs/KFSERVING_DEBUG_GUIDE.md#debug-kfserving-request-flow)
+
+To debug lets start at serving namespace and follow it:
+```bash
+❯ k -n seizadi get vs
+NAME                                   GATEWAYS                                                                          HOSTS                                                                                                                                                                                                      AGE
+notebook-seizadi-kubecon-tutorial      [kubeflow/kubeflow-gateway]                                                       [*]                                                                                                                                                                                                        16d
+notebook-seizadi-kubeflow-end-to-end   [kubeflow/kubeflow-gateway]                                                       [*]                                                                                                                                                                                                        6d16h
+sklearn-iris                           [knative-ingress-gateway.knative-serving]                                         [sklearn-iris.seizadi.platform.sexample.com]                                                                                                                                                                2d19h
+sklearn-iris-predictor-default         [knative-serving/cluster-local-gateway knative-serving/knative-ingress-gateway]   [sklearn-iris-predictor-default.seizadi sklearn-iris-predictor-default.seizadi.platform.sexample.com sklearn-iris-predictor-default.seizadi.svc sklearn-iris-predictor-default.seizadi.svc.cluster.local]   2d19h
+sklearn-iris-predictor-default-mesh    [mesh]                                                                            [sklearn-iris-predictor-default.seizadi sklearn-iris-predictor-default.seizadi.svc sklearn-iris-predictor-default.seizadi.svc.cluster.local] 
+```
+lets look at the ingress point and the gateway that is used:
+```bash
+❯ k -n seizadi get vs sklearn-iris -o json | jq -r ".spec.gateways"
+[
+  "knative-ingress-gateway.knative-serving"
+]
+```
+
+Looking at the Gateway:
+```bash
+❯ kubectl get gateway knative-ingress-gateway -n knative-serving -oyaml
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"networking.istio.io/v1alpha3","kind":"Gateway","metadata":{"annotations":{},"labels":{"app.kubernetes.io/component":"knative-serving-install","app.kubernetes.io/instance":"knative-serving-install-v0.11.1","app.kubernetes.io/managed-by":"kfctl","app.kubernetes.io/name":"knative-serving-install","app.kubernetes.io/part-of":"kubeflow","app.kubernetes.io/version":"v0.11.1","kustomize.component":"knative","networking.knative.dev/ingress-provider":"istio"},"name":"knative-ingress-gateway","namespace":"knative-serving"},"spec":{"selector":{"app":"kfserving-ingressgateway","kfserving":"ingressgateway"},"servers":[{"hosts":["*"],"port":{"name":"http","number":80,"protocol":"HTTP"}}]}}
+  creationTimestamp: "2020-08-03T19:52:14Z"
+  generation: 1
+  labels:
+    app.kubernetes.io/component: knative-serving-install
+    app.kubernetes.io/instance: knative-serving-install-v0.11.1
+    app.kubernetes.io/managed-by: kfctl
+    app.kubernetes.io/name: knative-serving-install
+    app.kubernetes.io/part-of: kubeflow
+    app.kubernetes.io/version: v0.11.1
+    kustomize.component: knative
+    networking.knative.dev/ingress-provider: istio
+  name: knative-ingress-gateway
+  namespace: knative-serving
+  resourceVersion: "4951"
+  selfLink: /apis/networking.istio.io/v1alpha3/namespaces/knative-serving/gateways/knative-ingress-gateway
+  uid: 9c6b86ec-c843-410e-b963-922fe3106a0b
+spec:
+  selector:
+    app: kfserving-ingressgateway
+    kfserving: ingressgateway
+  servers:
+  - hosts:
+    - '*'
+    port:
+      name: http
+      number: 80
+      protocol: HTTP
+```
+It seems our problem  might be related to similar 
+[issue with GCP IAP](https://github.com/kubeflow/kfserving/issues/824) where there is
+single Kubeflow endpoint that provides authentication and uses routes. The kfserving
+endpoint requires Host based routing and has a seperate gateway. This is a gap that
+is identified in the 
+[GCP IAP Guide](https://github.com/kubeflow/kfserving/tree/master/docs/samples/gcp-iap#expose-the-inference-service-externally-using-an-additional-istio-virtual-service)
+
+I [logged an issue](https://github.com/kubeflow/kfserving/issues/1154) 
+and the recommendation was to upgrade from Kubeflow 1.0.2 to 1.1.0
+release to fix the problem. Looks this will not in anycase have AuthZ that is gap
+in kfserving for production, you can disable AuthZ to have it work with AuthN.
+
+Create a new cluster to debug the fix from issue above, ran into 
+[another issue](https://github.com/kubeflow/kubeflow/issues/5370#issuecomment-722053414)
+on AWS Cognito 1.1.0. 
+
+Now will the issue resolved can work on bringing up kfserving on kubeflow.
+We will need to follow a similar pattern as for 
+[GCloud IAP](https://github.com/kubeflow/kfserving/tree/master/docs/samples/gcp-iap).
+There are no docs for AWS Cognito yet.
+
+The kfserving model does not support AuthZ yet, so we need to turn
+Istio side-car off as in in this manifest,
+[sklearn-iap-no-authz.yaml](https://github.com/kubeflow/kfserving/blob/master/docs/samples/gcp-iap/sklearn-iap-no-authz.yaml)
+```yaml
+    sidecar.istio.io/inject: "false"
+```
+Note ***Warning***: The sklearn-iap-no-authz.yaml has an annotation that prevents 
+the istio sidecar from being injected and thus disables istio RBAC authorization. 
+This is unlikely to be suitable for production.
+
+I'm not sure we will need to remove the side-car as I don't know how AuthZ is setup
+with Cognito, as ther there is some access to the namespace for notebook server.
+
+So I will start by setting up the Virtual Service.
+The Virtual Service will match on a path-based route (required by AWS ALB/Cognito),
+template is: https://<Ingress_DNS>/kfserving/<namespace>/sklearn-iap:predict,
+such as: kubeflow.platform.sexample.com/kfserving/seizadi/sklearn-iap:predict
+and will forward to cluster-local-gateway whilst rewriting host and uri. 
+The uri is then a host based route as expected by kfserving:
+template: https://sklearn-iap-predictor-default.<namespace>.svc.cluster.local/v1/models/sklearn-iap:predict,
+such as: https://sklearn-iap-predictor-default.eizadi.svc.cluster.local/v1/models/sklearn-iap:predict.
+
+We will use the 
+[virual service example]()
+```yaml
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: kfserving-iap
+spec:
+  gateways:
+  - kubeflow/kubeflow-gateway
+  hosts:
+  - '*'
+  http:
+  - match:
+    - uri:
+        prefix: /kfserving/seizadi/sklearn-iap
+    route:
+    - destination:
+        host: cluster-local-gateway.istio-system.svc.cluster.local
+      headers:
+        request:
+          set:
+            Host: sklearn-iap-predictor-default.seizadi.svc.cluster.local
+      weight: 100
+    rewrite:
+        uri: /v1/models/sklearn-iap
+    timeout: 300s
+```
+Then apply:
+```bash
+❯ k apply -f deploy/kfserving_seizadi_virtual_service.yaml
+virtualservice.networking.istio.io/kfserving-iap created
+```
+
+Now instead of 404 error, I'm getting 400 error and it is routed correctly
+to the kfserving pod for prediction:
+```bash
+❯ k logs sklearn-iap-predictor-default-stx69-deployment-5844ff4b5c-ttbnc kfserving-container
+[I 201106 00:52:49 storage:35] Copying contents of /mnt/models to local
+[I 201106 00:52:49 kfserver:88] Registering model: sklearn-iap
+[I 201106 00:52:49 kfserver:77] Listening on port 8080
+[I 201106 00:52:49 kfserver:79] Will fork 0 workers
+[I 201106 00:52:49 process:126] Starting 4 processes
+[W 201106 00:59:07 web:2250] 400 POST /v1/models/sklearn-iap:predict (127.0.0.1) 1.28ms
+[W 201106 00:59:39 web:2250] 400 POST /v1/models/sklearn-iap:predict (127.0.0.1) 1.31ms
+```
+The error from client is: "", which comes from the 
+[kfserving json decoder](https://github.com/kubeflow/kfserving/blob/master/python/kfserving/kfserving/handlers/http.py#L55)
+```bash
+        except json.decoder.JSONDecodeError as e:
+            raise tornado.web.HTTPError(
+                status_code=HTTPStatus.BAD_REQUEST,
+                reason="Unrecognized request format: %s" % e
+            )
+```
+
+To debug this I run tcpdump on the predictor container:
+```bash
+kubectl -n seizadi exec -it sklearn-iap-predictor-default-qgdh6-deployment-79bfd469cd-bn5rz -- /bin/bash
+```
+Install tcpdump and capture:
+```bash
+apt-get update
+apt-get install tcpdump
+tcpdump -s 0 -n -w /tmp/sklearn.pcap
+```
+Now load it to your laptop and use something friendly like WireShark to look at it:
+```bash
+kubectl cp seizadi/sklearn-iap-predictor-default-qgdh6-deployment-79bfd469cd-bn5rz:/tmp/sklearn.pcap ~/Downloads/sklearn.pcap
+```
+Updated the client script to send JSON and the POST request work now:
+```bash
+{"predictions": [1, 1]}
+```
+
+
 # Kubeflow Authentication and Authorization Prototype
+
+***TODO*** Work on this approach versus Cognito
 
 This implementation's target platforms are Kubernetes clusters with access to modify Kubernetes' API config file, which is generally possible with on Premise installations of Kubernetes.
 
@@ -484,7 +776,7 @@ Please generate certificates with a trusted authority for enabling this example 
 
 *Note*: This step is not required if you disable TLS in Dex configuration
 
-`kubectl create secret tls dex.platform.seizadi.com.tls --cert=ssl/cert.pem --key=ssl/key.pem -n auth`
+`kubectl create secret tls dex.platform.sexample.com.tls --cert=ssl/cert.pem --key=ssl/key.pem -n auth`
 
 Replace `dex.example.com.tls` with your own domain.
 
